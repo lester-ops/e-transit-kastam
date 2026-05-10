@@ -37,14 +37,12 @@ const IconRefresh = () => <svg xmlns="http://www.w3.org/2000/svg" width="14" hei
 const IconMail = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
 
 // --- KOMPONEN LOGO (Kalis Pecah & Tempatan) ---
-// Sila pastikan anda meletakkan fail "logo.png" di dalam folder "public" projek Next.js anda
 const LogoKastam = ({ className }: { className?: string }) => (
     <img 
         src="/logo.png" 
         alt="Logo Kastam Diraja Malaysia" 
         className={className} 
         onError={(e) => {
-            // Jika logo tiada, elakkan imej pecah (fallback)
             e.currentTarget.style.display = 'none';
         }} 
     />
@@ -97,7 +95,7 @@ const mapUItoDB = (uiRec: any) => ({
     company_id: uiRec.companyId,
     company_name: uiRec.companyName,
     date_submitted: uiRec.dateSubmitted,
-    stesen_penghantar: uiRec.stesen_penghantar,
+    stesen_penghantar: uiRec.stesenPenghantar,
     stesen_penerima: uiRec.stesenPenerima,
     konsainor: uiRec.konsainor,
     konsainee: uiRec.konsainee,
@@ -156,6 +154,20 @@ export default function App() {
 
     useEffect(() => {
         fetchData();
+        
+        // --- SEMAK SESI LOGIN LALU DARI LOCALSTORAGE ---
+        const savedSession = localStorage.getItem('eTransitSession');
+        if (savedSession) {
+            try {
+                const parsedUser = JSON.parse(savedSession);
+                if (parsedUser && parsedUser.id) {
+                    setUser(parsedUser);
+                    setView('dashboard');
+                }
+            } catch (e) {
+                localStorage.removeItem('eTransitSession');
+            }
+        }
     }, []);
 
     // --- FUNGSI MENYIMPAN LOG KE PANGKALAN DATA ---
@@ -205,6 +217,8 @@ export default function App() {
     const handleLogin = (selectedUser: any) => {
         setUser(selectedUser);
         setView('dashboard');
+        // --- SIMPAN SESI KE LOCALSTORAGE ---
+        localStorage.setItem('eTransitSession', JSON.stringify(selectedUser));
         addSystemLog('Sistem', `Log Masuk (Login) berjaya.`, selectedUser);
     };
 
@@ -212,6 +226,8 @@ export default function App() {
         addSystemLog('Sistem', `Log Keluar (Logout) sistem.`);
         setUser(null);
         setView('login');
+        // --- PADAM SESI DARI LOCALSTORAGE ---
+        localStorage.removeItem('eTransitSession');
     };
 
     // --- SIMPAN BORANG (INSERT/UPDATE KE SUPABASE) ---
