@@ -133,7 +133,11 @@ export default function App() {
     const fetchData = async () => {
         try {
             const { data: profilesData } = await supabase.from('profiles').select('*');
-            if (profilesData) setUsersList(profilesData);
+            if (profilesData) {
+                // Sentiasa menukar nama pengguna berstatus 'admin' kepada 'Admin' sahaja dalam sistem
+                const mappedProfiles = profilesData.map((p:any) => p.role === 'admin' ? {...p, name: 'Admin'} : p);
+                setUsersList(mappedProfiles);
+            }
 
             const { data: logsData } = await supabase.from('system_logs').select('*').order('id', { ascending: false });
             if (logsData) setSysLogs(logsData);
@@ -159,6 +163,7 @@ export default function App() {
             try {
                 const parsedUser = JSON.parse(savedSession);
                 if (parsedUser && parsedUser.id) {
+                    if (parsedUser.role === 'admin') parsedUser.name = 'Admin';
                     setUser(parsedUser);
                     setView('dashboard');
                 }
@@ -634,7 +639,7 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                                 value={nameInput} 
                                 onChange={e=>setNameInput(e.target.value)} 
                                 className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium uppercase" 
-                                placeholder="Taip untuk mencari..." 
+                                placeholder={roleInput === 'admin' ? "Taip ADMIN..." : "Taip untuk mencari..."} 
                             />
                             <datalist id="userListLogin">
                                 {availableUsers.map((u: any) => (
@@ -675,7 +680,7 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                                 value={nameInput} 
                                 onChange={e=>setNameInput(e.target.value)} 
                                 className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium uppercase" 
-                                placeholder="Taip nama anda..." 
+                                placeholder={roleInput === 'admin' ? "Taip ADMIN..." : "Taip nama anda..."} 
                             />
                             <datalist id="userListForgot">
                                 {availableUsers.map((u: any) => (
@@ -767,6 +772,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
     const [scanTerm, setScanTerm] = useState('');
     const [scanError, setScanError] = useState('');
     const [filterTerm, setFilterTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('Semua');
 
     const getStatusBadge = (status: string) => {
         if (status === 'Selesai') return <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">Selesai</span>;
@@ -795,6 +801,15 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
     // SYARIKAT HANYA MELIHAT REKODNYA SENDIRI
     let filteredRecords = user.role === 'syarikat' ? records.filter((r: any) => r.companyId === user.id) : records;
     
+    // Tapisan Status
+    if (statusFilter !== 'Semua') {
+        if (statusFilter === 'Pending') {
+            filteredRecords = filteredRecords.filter((r: any) => r.status !== 'Selesai' && r.status !== 'Dibatalkan');
+        } else {
+            filteredRecords = filteredRecords.filter((r: any) => r.status === statusFilter);
+        }
+    }
+
     if (filterTerm.trim()) {
         const q = filterTerm.toLowerCase();
         filteredRecords = filteredRecords.filter((r: any) => 
@@ -862,11 +877,23 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                 </div>
             </div>
 
-            <div className="flex justify-between items-center mb-6 border-t border-slate-200 pt-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-t border-slate-200 pt-6 gap-4">
                 <h2 className="text-2xl font-bold text-gray-800">Senarai Deklarasi Transit</h2>
-                <button onClick={() => onOpenForm()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 shadow-sm transition-colors">
-                    <IconPlus /> <span>{user.role === 'syarikat' ? 'Borang Baru' : 'Isi Borang Baru (Bagi Syarikat)'}</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                    <select 
+                        value={statusFilter} 
+                        onChange={(e) => setStatusFilter(e.target.value)} 
+                        className="w-full sm:w-auto p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium text-sm text-slate-700 bg-white"
+                    >
+                        <option value="Semua">Semua Status</option>
+                        <option value="Pending">Dalam Transit (Pending)</option>
+                        <option value="Selesai">Selesai</option>
+                        <option value="Dibatalkan">Dibatalkan</option>
+                    </select>
+                    <button onClick={() => onOpenForm()} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 shadow-sm transition-colors">
+                        <IconPlus /> <span>{user.role === 'syarikat' ? 'Borang Baru' : 'Isi Borang Baru (Bagi Syarikat)'}</span>
+                    </button>
+                </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
