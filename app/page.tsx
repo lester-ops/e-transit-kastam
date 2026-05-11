@@ -37,7 +37,7 @@ const IconRefresh = () => <svg xmlns="http://www.w3.org/2000/svg" width="14" hei
 const IconMail = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
 const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>;
 
-// --- KOMPONEN LOGO ---
+// --- KOMPONEN LOGO (Kalis Pecah & Tempatan) ---
 const LogoKastam = ({ className }: { className?: string }) => (
     <img 
         src="/logo.png" 
@@ -52,7 +52,7 @@ const LogoKastam = ({ className }: { className?: string }) => (
 // --- FUNGSI MAPPING SUPABASE <-> UI ---
 const mapDBtoUI = (dbRec: any) => ({
     id: dbRec.id,
-    noPendaftaranRasmi: dbRec.no_pendaftaran_rasmi || dbRec.id,
+    noPendaftaranRasmi: dbRec.no_pendaftaran_rasmi || dbRec.id, // Fallback jika tiada
     status: dbRec.status,
     routeId: dbRec.route_id,
     routeParams: dbRec.route_params || [],
@@ -89,7 +89,7 @@ const mapDBtoUI = (dbRec: any) => ({
 
 const mapUItoDB = (uiRec: any) => ({
     id: uiRec.id,
-    no_pendaftaran_rasmi: uiRec.id, // Gunakan ID sebagai No Pendaftaran
+    no_pendaftaran_rasmi: uiRec.noPendaftaranRasmi || null,
     status: uiRec.status,
     route_id: uiRec.routeId,
     route_params: uiRec.routeParams,
@@ -229,8 +229,7 @@ export default function App() {
 
             if (isTracking) {
                 const { error: trackErr } = await supabase.from('declarations').update({
-                    status: newRecord.status,
-                    no_pendaftaran_rasmi: newRecord.id
+                    status: newRecord.status
                 }).eq('id', newRecord.id);
                 if (trackErr) throw trackErr;
 
@@ -244,7 +243,7 @@ export default function App() {
                 }]);
                 if (logErr) throw logErr;
                 
-                await addSystemLog('Operasi', `Kemaskini status / laluan bagi borang ${newRecord.id} (${newRecord.noDaftarKenderaan})`);
+                await addSystemLog('Operasi', `Kemaskini status / laluan bagi borang ${newRecord.noPendaftaranRasmi} (${newRecord.noDaftarKenderaan})`);
             } else {
                 const declPayload = mapUItoDB(newRecord);
 
@@ -272,7 +271,7 @@ export default function App() {
                     if (itemsErr) throw itemsErr;
                 }
 
-                await addSystemLog('Borang', isEdit ? `Menyunting (Edit) borang ${newRecord.id} (${newRecord.noDaftarKenderaan})` : `Mendaftar borang deklarasi baru: ${newRecord.id} (${newRecord.noDaftarKenderaan})`);
+                await addSystemLog('Borang', isEdit ? `Menyunting (Edit) borang ${newRecord.noPendaftaranRasmi} (${newRecord.noDaftarKenderaan})` : `Mendaftar borang deklarasi baru: ${newRecord.noPendaftaranRasmi} (${newRecord.noDaftarKenderaan})`);
             }
 
             await fetchData();
@@ -290,7 +289,7 @@ export default function App() {
         }
     };
 
-    const cancelRecord = async (id: string, reason: string) => {
+    const cancelRecord = async (id: string, noDaftar: string, reason: string) => {
         try {
             const now = new Date();
             const pad = (n: number) => n.toString().padStart(2, '0');
@@ -304,19 +303,20 @@ export default function App() {
                 pegawai: user.name,
                 tindakan: `DIBATALKAN: ${reason}`
             }]);
-            await addSystemLog('Borang', `Membatalkan borang ${id}. Sebab: ${reason}`);
+            await addSystemLog('Borang', `Membatalkan borang ${noDaftar}. Sebab: ${reason}`);
             await fetchData();
+
         } catch (error) {
             console.error("Ralat membatalkan borang:", error);
         }
     };
 
-    const hardDeleteRecord = async (id: string) => {
+    const hardDeleteRecord = async (id: string, noDaftar: string) => {
         try {
             await supabase.from('transit_logs').delete().eq('declaration_id', id);
             await supabase.from('items').delete().eq('declaration_id', id);
             await supabase.from('declarations').delete().eq('id', id);
-            await addSystemLog('Borang', `PADAM SEPENUHNYA (Hard Delete) borang ${id} dari pangkalan data.`);
+            await addSystemLog('Borang', `PADAM SEPENUHNYA (Hard Delete) borang ${noDaftar} dari pangkalan data.`);
             await fetchData();
         } catch (error) {
             console.error("Ralat Hard Delete:", error);
@@ -394,7 +394,7 @@ export default function App() {
             </header>
 
             {view === 'dashboard' && <Dashboard user={user} records={records} onDelete={cancelRecord} onHardDelete={hardDeleteRecord} onOpenForm={(r:any) => {setCurrentRecord(r); setView('form')}} onPrint={(r:any) => {setCurrentRecord(r); setView('print')}} onTrack={(r:any) => {setCurrentRecord(r); setView('tracking')}} />}
-            {view === 'form' && <FormView user={user} usersList={usersList} record={currentRecord} onSave={async (rec:any) => { setCurrentRecord(rec); const ok = await saveRecord(rec); if(ok) setView('print'); }} onCancel={() => setView('dashboard')} />}
+            {view === 'form' && <FormView user={user} usersList={usersList} record={currentRecord} records={records} onSave={async (rec:any) => { setCurrentRecord(rec); const ok = await saveRecord(rec); if(ok) setView('print'); }} onCancel={() => setView('dashboard')} />}
             {view === 'print' && <PrintView record={currentRecord} onBack={() => setView('dashboard')} />}
             {view === 'tracking' && <TrackingView user={user} record={currentRecord} onSave={async (rec:any) => { const ok = await saveRecord(rec); if(ok) setView('dashboard'); }} onBack={() => setView('dashboard')} />}
             {view === 'report' && <ReportView user={user} records={records} />}
@@ -407,7 +407,7 @@ export default function App() {
 }
 
 // ==========================================
-// KOMPONEN PETI MASUK SUPERADMIN
+// KOMPONEN PETI MASUK ADMIN
 // ==========================================
 const InboxView = ({ sysLogs, usersList, fetchData, logAction }: any) => {
     const pendingRequests = sysLogs.filter((l: any) => l.jenis === 'Permintaan Reset' || l.jenis === 'Permohonan Daftar');
@@ -779,7 +779,10 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
         e.preventDefault();
         setScanError('');
         if (!scanTerm.trim()) return;
-        const foundRecord = records.find((r: any) => (r.id||'').toUpperCase() === scanTerm.toUpperCase().trim() || (r.noDaftarKenderaan||'').replace(/\s/g,'') === scanTerm.toUpperCase().replace(/\s/g,''));
+        const foundRecord = records.find((r: any) => 
+            (r.noPendaftaranRasmi||'').replace(/\s/g,'').toUpperCase() === scanTerm.toUpperCase().replace(/\s/g,'') ||
+            (r.id||'').toUpperCase() === scanTerm.toUpperCase().trim()
+        );
         if (foundRecord) {
             setScanTerm(''); 
             onTrack(foundRecord); 
@@ -789,12 +792,13 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
         }
     };
 
+    // SYARIKAT HANYA MELIHAT REKODNYA SENDIRI
     let filteredRecords = user.role === 'syarikat' ? records.filter((r: any) => r.companyId === user.id) : records;
     
     if (filterTerm.trim()) {
         const q = filterTerm.toLowerCase();
         filteredRecords = filteredRecords.filter((r: any) => 
-            (r.id||'').toLowerCase().includes(q) ||
+            (r.noPendaftaranRasmi||'').toLowerCase().includes(q) ||
             (r.companyName||'').toLowerCase().includes(q) ||
             (r.noDaftarKenderaan||'').toLowerCase().includes(q) ||
             (r.namaPemandu||'').toLowerCase().includes(q) ||
@@ -817,15 +821,15 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                     <div className="bg-blue-50 p-6 rounded-xl shadow-sm border border-blue-200">
                         <label className="block text-base font-bold text-blue-900 mb-2 flex items-center uppercase">
                             <div className="bg-blue-600 text-white p-1.5 rounded mr-2"><IconScan /></div>
-                            Tindakan Operasi (Imbas QR / Carian ID)
+                            Tindakan Operasi (Imbas QR / Carian)
                         </label>
-                        <p className="text-xs text-blue-700 mb-4 font-medium">Imbas QR atau taip No. Pendaftaran (ID) untuk terus membuka paparan log pengesahan laluan.</p>
+                        <p className="text-xs text-blue-700 mb-4 font-medium">Imbas QR atau taip No. Pendaftaran untuk terus membuka paparan log pengesahan laluan.</p>
                         <form onSubmit={handleScanSearch} className="flex gap-2">
                             <input
                                 type="text"
                                 value={scanTerm}
                                 onChange={(e) => setScanTerm(e.target.value)}
-                                placeholder="Cth: Y4S-..."
+                                placeholder="Cth: Y4S-05-00001/26"
                                 className="flex-grow p-3 border-2 border-blue-300 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none uppercase font-mono text-sm shadow-inner bg-white"
                             />
                             <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-colors flex items-center justify-center whitespace-nowrap">
@@ -870,7 +874,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 text-sm">
-                                <th className="p-4 font-semibold">No. Pendaftaran (ID) / Status</th>
+                                <th className="p-4 font-semibold">No. Pendaftaran / Status</th>
                                 {user.role !== 'syarikat' && <th className="p-4 font-semibold">Syarikat</th>}
                                 <th className="p-4 font-semibold">Laluan Dirancang</th>
                                 <th className="p-4 font-semibold">Kenderaan & Pemandu</th>
@@ -883,7 +887,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                             ) : filteredRecords.map((record: any, idx: number) => (
                                 <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
                                     <td className="p-4">
-                                        <div className="font-bold font-mono text-blue-800">{record.id}</div>
+                                        <div className="font-bold font-mono text-blue-800">{record.noPendaftaranRasmi || '-'}</div>
                                         <div className="mt-1">{getStatusBadge(record.status)}</div>
                                     </td>
                                     {user.role !== 'syarikat' && <td className="p-4 text-sm text-gray-800">{record.companyName}</td>}
@@ -908,7 +912,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                                             <IconFile />
                                         </button>
                                         
-                                        {/* HAK PEMBATALAN */}
+                                        {/* HAK PEMBATALAN (PEGAWAI / ADMIN SAHAJA) */}
                                         {record.status !== 'Dibatalkan' && (user.role === 'pegawai' || user.role === 'admin') && (
                                             <button onClick={() => setDeleteTarget(record.id)} className="text-amber-500 hover:bg-amber-50 p-2 rounded inline-flex items-center border border-amber-200" title="Batal Borang">
                                                 <IconCancel />
@@ -918,8 +922,8 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                                         {/* BUTANG HARD DELETE (HANYA ADMIN) */}
                                         {user.role === 'admin' && (
                                             <button onClick={() => {
-                                                if(window.confirm(`AMARAN TERTINGGI:\n\nAdakah anda pasti ingin memadam rekod ${record.id} SEPENUHNYA?\n\nRekod ini akan dipadam terus dari sistem dan tidak boleh dikembalikan!`)) {
-                                                    onHardDelete(record.id);
+                                                if(window.confirm(`AMARAN TERTINGGI:\n\nAdakah anda pasti ingin memadam rekod ${record.noPendaftaranRasmi} SEPENUHNYA?\n\nRekod ini akan dipadam terus dari sistem dan tidak boleh dikembalikan!`)) {
+                                                    onHardDelete(record.id, record.noPendaftaranRasmi);
                                                 }
                                             }} className="text-red-600 hover:bg-red-100 p-2 rounded inline-flex items-center border border-red-200" title="Padam Terus (Hard Delete)">
                                                 <IconTrash />
@@ -939,12 +943,12 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
 // ==========================================
 // 3. KOMPONEN BORANG ASAL
 // ==========================================
-const FormView = ({ user, usersList, record, onSave, onCancel }: any) => {
+const FormView = ({ user, usersList, record, records, onSave, onCancel }: any) => {
     const isEdit = !!record;
     const syarikatList = usersList.filter((u: any) => u.role === 'syarikat');
 
     const [formData, setFormData] = useState(record || {
-        status: 'Menunggu Pelepasan', transitLogs: [], id: '',
+        status: 'Menunggu Pelepasan', transitLogs: [], id: '', noPendaftaranRasmi: '',
         routeId: '', routeParams: [], companyId: user.role === 'syarikat' ? user.id : '', companyName: user.role === 'syarikat' ? user.name : '',
         stesenPenghantar: '', stesenPenerima: '', konsainor: '', konsainee: '', destinasiAsal: '', destinasiAkhir: '',
         noDaftarKenderaan: '', jenisKenderaan: '', noKontena: '-', namaPemandu: '',
@@ -1007,12 +1011,9 @@ const FormView = ({ user, usersList, record, onSave, onCancel }: any) => {
         const pad = (n: number) => n.toString().padStart(2, '0');
         const dateString = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
         
-        let generatedNoDaftar = formData.id; // Gunakan id sebagai No Pendaftaran
+        // --- AUTO-SEQUENCE GENERATOR ---
+        let generatedNoDaftar = formData.noPendaftaranRasmi;
         if (!isEdit && !generatedNoDaftar) {
-            const mm = pad(now.getMonth() + 1);
-            const yy = now.getFullYear().toString().slice(-2);
-            const randomNum = Math.floor(100000 + Math.random() * 900000).toString().substring(0, 6);
-            
             let prefix = 'SYS';
             const stn = formData.stesenPenghantar || '';
             if (stn.includes('Mengkalap')) prefix = 'Y4S';
@@ -1020,12 +1021,34 @@ const FormView = ({ user, usersList, record, onSave, onCancel }: any) => {
             else if (stn.includes('Tedungan')) prefix = 'Y37';
             else if (stn.includes('Sungai Tujuh') || stn.includes('Sungai Tujoh')) prefix = 'Y41';
             
-            generatedNoDaftar = `${prefix}-${mm}-${randomNum}/${yy}`;
+            const mm = pad(now.getMonth() + 1);
+            const yy = now.getFullYear().toString().slice(-2);
+            
+            const prefixMonth = `${prefix}-${mm}-`;
+            const suffixYear = `/${yy}`;
+            
+            let maxSeq = 0;
+            if (records && records.length > 0) {
+                records.forEach((r: any) => {
+                    const noDaftar = r.noPendaftaranRasmi || '';
+                    if (noDaftar.startsWith(prefixMonth) && noDaftar.endsWith(suffixYear)) {
+                        const middlePart = noDaftar.replace(prefixMonth, '').replace(suffixYear, '');
+                        const seqNum = parseInt(middlePart, 10);
+                        if (!isNaN(seqNum) && seqNum > maxSeq) {
+                            maxSeq = seqNum;
+                        }
+                    }
+                });
+            }
+            
+            const nextSeq = String(maxSeq + 1).padStart(5, '0');
+            generatedNoDaftar = `${prefix}-${mm}-${nextSeq}/${yy}`;
         }
 
         const finalRecord = {
             ...formData,
-            id: generatedNoDaftar, // ID ADALAH NO PENDAFTARAN
+            id: isEdit ? formData.id : crypto.randomUUID(), // Internal Database ID Only
+            noPendaftaranRasmi: generatedNoDaftar, // THIS IS THE DISPLAY ID
             dateSubmitted: isEdit ? formData.dateSubmitted : dateString,
             jumlahBungkusan: formData.jumlahBungkusan || totalQty
         };
@@ -1047,7 +1070,7 @@ const FormView = ({ user, usersList, record, onSave, onCancel }: any) => {
                             <label className="block text-sm font-bold text-amber-800 mb-1">MENGISI BAGI PIHAK SYARIKAT (PILIH SYARIKAT):</label>
                             <select name="companyIdSelector" required value={formData.companyId} onChange={handleChange} className="w-full p-2 border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 outline-none bg-white">
                                 <option value="">-- Sila Pilih Syarikat --</option>
-                                {syarikatList.sort((a,b) => a.name.localeCompare(b.name)).map((s: any) => (
+                                {syarikatList.sort((a:any,b:any) => a.name.localeCompare(b.name)).map((s: any) => (
                                     <option key={s.id} value={s.id}>{s.name}</option>
                                 ))}
                             </select>
@@ -1223,8 +1246,8 @@ const TrackingView = ({ user, record, onSave, onBack }: any) => {
                 <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden mb-6">
                     <div className="p-4 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div>
-                            <div className="text-xs text-slate-400">No. Pendaftaran (ID)</div>
-                            <div className="font-mono text-lg font-bold text-slate-100">{record.id}</div>
+                            <div className="text-xs text-slate-400">No. Pendaftaran</div>
+                            <div className="font-mono text-lg font-bold text-slate-100">{record.noPendaftaranRasmi || '-'}</div>
                         </div>
                         <div className="md:text-right">
                             <div className="text-xs text-slate-400">Status Semasa</div>
@@ -1298,7 +1321,7 @@ const TrackingView = ({ user, record, onSave, onBack }: any) => {
 // ==========================================
 const PrintView = ({ record, onBack }: any) => {
     if (!record) return null;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(record.id)}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(record.noPendaftaranRasmi || '')}`;
     
     // Pastikan semua stesen ditanda SELESAI jika status borang ialah Selesai (walaupun di-force admin)
     const getLogForStation = (stationKey: string) => {
@@ -1360,7 +1383,7 @@ const PrintView = ({ record, onBack }: any) => {
                             <div className="p-1 text-center border-b border-black font-bold uppercase">UNTUK KEGUNAAN RASMI / FOR OFFICIAL USE</div>
                             <div className="flex border-b border-black flex-1">
                                 <div className="w-1/2 p-1.5 border-r border-black"><div className="font-bold">5. Tarikh Waktu Terima</div><div className="mt-2 text-center font-mono font-bold">{(record.dateSubmitted || '').split(' ')[0]}</div></div>
-                                <div className="w-1/2 p-1.5"><div className="font-bold">6. No. Pendaftaran</div><div className="mt-2 text-center font-mono text-sm font-bold text-blue-900 print:text-black">{record.id || '-'}</div></div>
+                                <div className="w-1/2 p-1.5"><div className="font-bold">6. No. Pendaftaran</div><div className="mt-2 text-center font-mono text-sm font-bold text-blue-900 print:text-black">{record.noPendaftaranRasmi || '-'}</div></div>
                             </div>
                             <div className="p-1 flex-1 flex flex-col justify-between">
                                 <div><div className="font-bold">7. Pegawai Kastam Yang Hak</div></div>
@@ -1533,7 +1556,7 @@ const ReportView = ({ user, records }: any) => {
         if (filterStesen !== 'Semua Stesen' && r.stesenPenghantar !== filterStesen) return false;
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
-            const isMatch = (r.companyName||'').toLowerCase().includes(q) || (r.konsainor||'').toLowerCase().includes(q) || (r.konsainee||'').toLowerCase().includes(q) || (r.noDaftarKenderaan||'').toLowerCase().includes(q) || (r.id||'').toLowerCase().includes(q);
+            const isMatch = (r.companyName||'').toLowerCase().includes(q) || (r.konsainor||'').toLowerCase().includes(q) || (r.konsainee||'').toLowerCase().includes(q) || (r.noDaftarKenderaan||'').toLowerCase().includes(q) || (r.noPendaftaranRasmi||'').toLowerCase().includes(q);
             if (!isMatch) return false;
         }
         return true;
@@ -1595,7 +1618,7 @@ const ReportView = ({ user, records }: any) => {
             const fullRouteString = rec.routeParams && rec.routeParams.length > 0 ? rec.routeParams.map((s: string) => s.replace('ICQS ', '')).join(' -> ') : '-';
             const catatan = rec.status === 'Dibatalkan' ? ((rec.transitLogs||[]).slice().reverse().find((l:any) => (l.tindakan||'').startsWith('DIBATALKAN'))?.tindakan.replace('DIBATALKAN: ', '') || 'Dibatalkan') : '-';
             
-            const row = `"${rec.id}","${displayDate}","${rec.status}","${senaraiBarang}","${rec.companyName}","${fullRouteString}","${rec.noDaftarKenderaan}","${(rec.konsainor||'').replace(/\n/g, ' ')}","${(rec.konsainee||'').replace(/\n/g, ' ')}","${loriBeratTan}","${totalNilai}","${catatan}"`;
+            const row = `"${rec.noPendaftaranRasmi || '-'}","${displayDate}","${rec.status}","${senaraiBarang}","${rec.companyName}","${fullRouteString}","${rec.noDaftarKenderaan}","${(rec.konsainor||'').replace(/\n/g, ' ')}","${(rec.konsainee||'').replace(/\n/g, ' ')}","${loriBeratTan}","${totalNilai}","${catatan}"`;
             csvContent += row + "\n";
         });
 
@@ -1683,7 +1706,7 @@ const ReportView = ({ user, records }: any) => {
                                 ? rec.routeParams.map((s: string) => s.replace('ICQS ', '')).join(' ➔ ') 
                                 : '-';
 
-                            return (<tr key={rec.id} className="hover:bg-slate-50 border-b border-slate-300"><td className="border border-slate-300 p-2 font-bold font-mono whitespace-nowrap text-blue-800">{rec.id}</td><td className="border border-slate-300 p-2 whitespace-nowrap">{displayDate}</td><td className="border border-slate-300 p-2 text-center whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded font-bold ${rec.status === 'Selesai' ? 'bg-green-100 text-green-800' : rec.status === 'Dibatalkan' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{rec.status}</span></td><td className="border border-slate-300 p-2 font-semibold bg-blue-50 min-w-[200px]">{senaraiBarang}</td><td className="border border-slate-300 p-2">{rec.companyName}</td><td className="border border-slate-300 p-2 font-medium">{fullRouteString}</td><td className="border border-slate-300 p-2 font-bold uppercase whitespace-nowrap">{rec.noDaftarKenderaan}</td><td className="border border-slate-300 p-2 min-w-[120px]" title={rec.konsainor}>{(rec.konsainor||'').split('\n')[0]}</td><td className="border border-slate-300 p-2 min-w-[120px]" title={rec.konsainee}>{(rec.konsainee||'').split('\n')[0]}</td><td className="border border-slate-300 p-2 text-right font-bold text-slate-700 bg-amber-50">{loriBeratTan}</td><td className="border border-slate-300 p-2 text-right bg-slate-50 whitespace-nowrap">{totalNilai.toFixed(2)}</td><td className="border border-slate-300 p-2 text-red-600 text-[10px] min-w-[150px]">{rec.status === 'Dibatalkan' ? ((rec.transitLogs||[]).slice().reverse().find((l:any) => (l.tindakan||'').startsWith('DIBATALKAN'))?.tindakan.replace('DIBATALKAN: ', '') || 'Dibatalkan') : '-'}</td></tr>);
+                            return (<tr key={rec.id} className="hover:bg-slate-50 border-b border-slate-300"><td className="border border-slate-300 p-2 font-bold font-mono whitespace-nowrap text-blue-800">{rec.noPendaftaranRasmi || '-'}</td><td className="border border-slate-300 p-2 whitespace-nowrap">{displayDate}</td><td className="border border-slate-300 p-2 text-center whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded font-bold ${rec.status === 'Selesai' ? 'bg-green-100 text-green-800' : rec.status === 'Dibatalkan' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{rec.status}</span></td><td className="border border-slate-300 p-2 font-semibold bg-blue-50 min-w-[200px]">{senaraiBarang}</td><td className="border border-slate-300 p-2">{rec.companyName}</td><td className="border border-slate-300 p-2 font-medium">{fullRouteString}</td><td className="border border-slate-300 p-2 font-bold uppercase whitespace-nowrap">{rec.noDaftarKenderaan}</td><td className="border border-slate-300 p-2 min-w-[120px]" title={rec.konsainor}>{(rec.konsainor||'').split('\n')[0]}</td><td className="border border-slate-300 p-2 min-w-[120px]" title={rec.konsainee}>{(rec.konsainee||'').split('\n')[0]}</td><td className="border border-slate-300 p-2 text-right font-bold text-slate-700 bg-amber-50">{loriBeratTan}</td><td className="border border-slate-300 p-2 text-right bg-slate-50 whitespace-nowrap">{totalNilai.toFixed(2)}</td><td className="border border-slate-300 p-2 text-red-600 text-[10px] min-w-[150px]">{rec.status === 'Dibatalkan' ? ((rec.transitLogs||[]).slice().reverse().find((l:any) => (l.tindakan||'').startsWith('DIBATALKAN'))?.tindakan.replace('DIBATALKAN: ', '') || 'Dibatalkan') : '-'}</td></tr>);
                         })}</tbody></table></div>
                     )}
                 </div>
