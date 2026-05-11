@@ -53,7 +53,7 @@ const LogoKastam = ({ className }: { className?: string }) => (
 // --- FUNGSI MAPPING SUPABASE <-> UI ---
 const mapDBtoUI = (dbRec: any) => ({
     id: dbRec.id,
-    noPendaftaranRasmi: dbRec.no_pendaftaran_rasmi || dbRec.id, // Fallback jika tiada
+    noPendaftaranRasmi: dbRec.no_pendaftaran_rasmi || dbRec.id, 
     status: dbRec.status,
     routeId: dbRec.route_id,
     routeParams: dbRec.route_params || [],
@@ -142,6 +142,49 @@ export default function App() {
         }
     }, []);
 
+    // --- FUNGSI AUTO-LOGOUT 10 MINIT ---
+    useEffect(() => {
+        let timeout: NodeJS.Timeout;
+
+        const resetTimeout = () => {
+            clearTimeout(timeout);
+            if (user) {
+                // Set masa 10 minit (600,000 milisaat)
+                timeout = setTimeout(() => {
+                    const now = new Date();
+                    const pad = (n: number) => n.toString().padStart(2, '0');
+                    const dateTimeStr = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                    
+                    // Log ke pangkalan data terus
+                    supabase.from('system_logs').insert([{
+                        tarikh_masa: dateTimeStr,
+                        jenis: 'Sistem', 
+                        user_id: user.id,
+                        user_name: user.name,
+                        tindakan: 'Auto Log Keluar (Tidak Aktif 10 Minit)'
+                    }]).then(() => {
+                        localStorage.removeItem('eTransitSession');
+                        setUser(null);
+                        setView('login');
+                        alert("Sesi anda telah tamat kerana tiada aktiviti selama 10 minit. Sila log masuk semula.");
+                        fetchData(); // Muat semula log 
+                    });
+                }, 10 * 60 * 1000); 
+            }
+        };
+
+        if (user) {
+            resetTimeout();
+            const events = ['mousemove', 'mousedown', 'keypress', 'touchmove', 'scroll'];
+            events.forEach(e => window.addEventListener(e, resetTimeout, true));
+
+            return () => {
+                clearTimeout(timeout);
+                events.forEach(e => window.removeEventListener(e, resetTimeout, true));
+            };
+        }
+    }, [user]);
+
     const fetchData = async () => {
         try {
             const { data: profilesData } = await supabase.from('profiles').select('*');
@@ -204,17 +247,24 @@ export default function App() {
         if (logsData) setSysLogs(logsData);
     };
 
-    const handleRequestAction = async (userName: string, type: 'reset'|'register', password?: string) => {
+    const handleRequestAction = async (userName: string, type: 'reset'|'register', password?: string, registerRole?: string) => {
         const now = new Date();
         const pad = (n: number) => n.toString().padStart(2, '0');
         const dateTimeStr = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
         
+        let actionDesc = '';
+        if (type === 'reset') actionDesc = 'Memohon reset kata laluan';
+        else if (type === 'register') {
+            const roleName = registerRole === 'awam' ? 'Orang Awam' : 'Syarikat';
+            actionDesc = `Memohon pendaftaran akaun ${roleName}. Kata laluan diminta: ${password}. Peranan: ${registerRole}`;
+        }
+
         const newLog = {
             tarikh_masa: dateTimeStr,
             jenis: type === 'reset' ? 'Permintaan Reset' : 'Permohonan Daftar', 
             user_id: null,
             user_name: userName.toUpperCase(),
-            tindakan: type === 'reset' ? 'Memohon reset kata laluan' : `Memohon pendaftaran akaun Syarikat. Kata laluan diminta: ${password}`
+            tindakan: actionDesc
         };
         
         try {
@@ -358,6 +408,44 @@ export default function App() {
                     .print-text { color: black !important; }
                     .print-area { position: absolute; left: 0; top: 0; width: 100%; min-height: 100%; background: white; padding: 15mm; }
                 }
+                /* KOD CSS UNTUK MENCANTIKKAN HTML5-QRCODE (BUTANG KAMERA MOBILE) */
+                #qr-reader { border: none !important; border-radius: 0.5rem; overflow: hidden; }
+                #qr-reader__dashboard_section_csr span, #qr-reader__dashboard_section_swaplink { font-weight: bold; color: #334155; margin-bottom: 0.5rem; display: block; }
+                #qr-reader button {
+                    background-color: #2563eb !important; 
+                    color: white !important;
+                    font-weight: 600 !important;
+                    padding: 0.6rem 1.2rem !important;
+                    border-radius: 0.5rem !important;
+                    border: none !important;
+                    margin: 0.5rem !important;
+                    cursor: pointer !important;
+                    box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.1) !important;
+                    font-size: 0.9rem !important;
+                    transition: all 0.2s ease !important;
+                    display: inline-block !important;
+                }
+                #qr-reader button:hover { background-color: #1d4ed8 !important; }
+                #qr-reader select {
+                    padding: 0.6rem !important;
+                    border-radius: 0.5rem !important;
+                    border: 1px solid #cbd5e1 !important;
+                    margin: 0.5rem 0 !important;
+                    width: 100% !important;
+                    max-width: 300px !important;
+                    outline: none !important;
+                    font-size: 0.9rem !important;
+                    background-color: #f8fafc !important;
+                }
+                #qr-reader a {
+                    color: #2563eb !important;
+                    text-decoration: underline !important;
+                    font-weight: 600 !important;
+                    margin-top: 1rem !important;
+                    margin-bottom: 0.5rem !important;
+                    display: inline-block !important;
+                    cursor: pointer !important;
+                }
             `}} />
 
             <header className="bg-slate-900 text-white p-4 shadow-md print:hidden no-print">
@@ -455,11 +543,14 @@ const InboxView = ({ sysLogs, usersList, fetchData, logAction }: any) => {
 
     const handleApproveRegister = async (log: any) => {
         try {
-            const tempPassword = log.tindakan.split('Kata laluan diminta: ')[1] || 'password123';
+            const tempPassword = log.tindakan.split('Kata laluan diminta: ')[1]?.split('.')[0] || 'password123';
+            const registerRoleMatch = log.tindakan.match(/Peranan:\s*(\w+)/);
+            const userRole = registerRoleMatch ? registerRoleMatch[1] : 'syarikat';
+
             const payload = { 
                 id: crypto.randomUUID(),
                 name: log.user_name,
-                role: 'syarikat',
+                role: userRole,
                 password: tempPassword,
                 stesen: ''
             };
@@ -467,10 +558,10 @@ const InboxView = ({ sysLogs, usersList, fetchData, logAction }: any) => {
             const { error } = await supabase.from('profiles').insert([payload]);
             if (error) throw error;
 
-            await supabase.from('system_logs').update({ jenis: 'Permohonan Selesai', tindakan: 'Pendaftaran Syarikat Diluluskan' }).eq('id', log.id);
-            await logAction('Sistem', `Meluluskan pendaftaran syarikat: ${log.user_name}`);
+            await supabase.from('system_logs').update({ jenis: 'Permohonan Selesai', tindakan: 'Pendaftaran Diluluskan' }).eq('id', log.id);
+            await logAction('Sistem', `Meluluskan pendaftaran pengguna baru: ${log.user_name} (${userRole})`);
             
-            alert(`Berjaya! Syarikat ${log.user_name} telah didaftarkan.`);
+            alert(`Berjaya! Akaun ${log.user_name} telah didaftarkan.`);
             fetchData();
         } catch(e: any) {
             alert("Ralat pendaftaran: " + e.message);
@@ -600,8 +691,8 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
     const handleRegisterSubmit = async (e: any) => {
         e.preventDefault();
         if(!nameInput || !passwordInput) return;
-        await onRequestAction(nameInput, 'register', passwordInput);
-        alert("Permohonan pendaftaran syarikat telah berjaya dihantar ke Peti Masuk Admin. Akaun boleh digunakan selepas diluluskan.");
+        await onRequestAction(nameInput, 'register', passwordInput, roleInput);
+        alert(`Permohonan pendaftaran ${roleInput === 'awam' ? 'Orang Awam' : 'Syarikat'} telah berjaya dihantar ke Peti Masuk Admin. Akaun boleh digunakan selepas diluluskan.`);
         setViewMode('login');
     };
 
@@ -626,8 +717,8 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                     )}
                     {viewMode === 'register' && (
                         <>
-                            <h2 className="text-2xl font-bold text-gray-800">Daftar Syarikat Baru</h2>
-                            <p className="text-gray-500 text-sm mt-1">Sila masukkan nama rasmi syarikat dan kata laluan pilihan anda.</p>
+                            <h2 className="text-2xl font-bold text-gray-800">Pendaftaran Baru</h2>
+                            <p className="text-gray-500 text-sm mt-1">Sila masukkan nama rasmi / nama penuh dan kata laluan pilihan anda.</p>
                         </>
                     )}
                 </div>
@@ -638,6 +729,7 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                             <label className="block text-sm font-bold text-gray-700 mb-1">Peranan</label>
                             <select value={roleInput} onChange={e=>{setRoleInput(e.target.value); setNameInput('');}} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium">
                                 <option value="syarikat">Syarikat Logistik</option>
+                                <option value="awam">Orang Awam</option>
                                 <option value="pegawai">Pegawai Kastam</option>
                                 <option value="admin">Admin</option>
                             </select>
@@ -668,7 +760,7 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                         </div>
                         <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg shadow hover:bg-blue-700 transition-colors mt-2">Log Masuk</button>
                         <div className="pt-4 border-t text-center">
-                            <button type="button" onClick={() => {setViewMode('register'); setNameInput(''); setPasswordInput('');}} className="text-sm text-slate-600 font-bold hover:text-blue-700">Daftar Syarikat Baru</button>
+                            <button type="button" onClick={() => {setViewMode('register'); setNameInput(''); setPasswordInput(''); setRoleInput('syarikat');}} className="text-sm text-slate-600 font-bold hover:text-blue-700">Daftar Pengguna Baru</button>
                         </div>
                     </form>
                 )}
@@ -679,6 +771,7 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                             <label className="block text-sm font-bold text-gray-700 mb-1">Peranan</label>
                             <select value={roleInput} onChange={e=>{setRoleInput(e.target.value); setNameInput('');}} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium">
                                 <option value="syarikat">Syarikat Logistik</option>
+                                <option value="awam">Orang Awam</option>
                                 <option value="pegawai">Pegawai Kastam</option>
                                 <option value="admin">Admin</option>
                             </select>
@@ -708,14 +801,21 @@ const LoginScreen = ({ users, onLogin, onRequestAction }: any) => {
                 {viewMode === 'register' && (
                     <form onSubmit={handleRegisterSubmit} className="space-y-4">
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">Nama Syarikat (Penuh)</label>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">Daftar Sebagai</label>
+                            <select value={roleInput} onChange={e=>setRoleInput(e.target.value)} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                                <option value="syarikat">Syarikat Logistik</option>
+                                <option value="awam">Orang Awam</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">Nama Syarikat / Nama Penuh</label>
                             <input 
                                 type="text" 
                                 required 
                                 value={nameInput} 
                                 onChange={e=>setNameInput(e.target.value)} 
                                 className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium uppercase" 
-                                placeholder="Contoh: LOGISTIK MAJU SDN BHD" 
+                                placeholder={roleInput === 'syarikat' ? "Contoh: LOGISTIK MAJU SDN BHD" : "Masukkan Nama Penuh"} 
                             />
                         </div>
                         <div>
@@ -848,8 +948,9 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
         };
     }, [isScanningQR]);
 
-    // SYARIKAT HANYA MELIHAT REKODNYA SENDIRI
-    let filteredRecords = user.role === 'syarikat' ? records.filter((r: any) => r.companyId === user.id) : records;
+    // SYARIKAT ATAU ORANG AWAM HANYA MELIHAT REKOD MEREKA SENDIRI
+    const isApplicant = user.role === 'syarikat' || user.role === 'awam';
+    let filteredRecords = isApplicant ? records.filter((r: any) => r.companyId === user.id) : records;
     
     // Tapisan Status
     if (statusFilter !== 'Semua') {
@@ -886,8 +987,8 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                 <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center">
                         <h3 className="text-lg font-bold mb-4 text-slate-800">Imbas Kod QR Borang</h3>
-                        <div id="qr-reader" className="w-full mx-auto mb-4 overflow-hidden rounded-lg"></div>
-                        <button onClick={() => setIsScanningQR(false)} className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold shadow transition-colors">
+                        <div id="qr-reader" className="w-full mx-auto mb-4 overflow-hidden rounded-lg border-none"></div>
+                        <button onClick={() => setIsScanningQR(false)} className="mt-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold shadow transition-colors">
                             Batal Imbasan
                         </button>
                     </div>
@@ -925,7 +1026,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                     </div>
                 )}
 
-                <div className={`bg-white p-6 rounded-xl shadow-sm border border-slate-200 ${user.role === 'syarikat' ? 'col-span-1 md:col-span-2' : ''}`}>
+                <div className={`bg-white p-6 rounded-xl shadow-sm border border-slate-200 ${isApplicant ? 'col-span-1 md:col-span-2' : ''}`}>
                     <label className="block text-base font-bold text-slate-800 mb-2 flex items-center uppercase">
                         <div className="bg-slate-800 text-white p-1.5 rounded mr-2"><IconSearch /></div>
                         Carian Senarai Borang
@@ -957,7 +1058,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                         <option value="Dibatalkan">Dibatalkan</option>
                     </select>
                     <button onClick={() => onOpenForm()} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 shadow-sm transition-colors">
-                        <IconPlus /> <span>{user.role === 'syarikat' ? 'Borang Baru' : 'Isi Borang Baru (Bagi Syarikat)'}</span>
+                        <IconPlus /> <span>{isApplicant ? 'Borang Baru' : 'Isi Borang Baru (Bagi Pemohon)'}</span>
                     </button>
                 </div>
             </div>
@@ -968,7 +1069,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 text-sm">
                                 <th className="p-4 font-semibold">No. Pendaftaran / Status</th>
-                                {user.role !== 'syarikat' && <th className="p-4 font-semibold">Syarikat</th>}
+                                {!isApplicant && <th className="p-4 font-semibold">Syarikat / Individu</th>}
                                 <th className="p-4 font-semibold">Laluan Dirancang</th>
                                 <th className="p-4 font-semibold">Kenderaan & Pemandu</th>
                                 <th className="p-4 font-semibold text-right">Tindakan</th>
@@ -983,7 +1084,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                                         <div className="font-bold font-mono text-blue-800">{record.noPendaftaranRasmi || '-'}</div>
                                         <div className="mt-1">{getStatusBadge(record.status)}</div>
                                     </td>
-                                    {user.role !== 'syarikat' && <td className="p-4 text-sm text-gray-800">{record.companyName}</td>}
+                                    {!isApplicant && <td className="p-4 text-sm text-gray-800">{record.companyName}</td>}
                                     <td className="p-4 text-sm text-gray-600">
                                         <div className="font-medium text-xs text-blue-800 bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100 mb-1 max-w-[200px] sm:max-w-xs whitespace-normal break-words">
                                             {record.routeParams && record.routeParams.length > 0 
@@ -1038,11 +1139,14 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
 // ==========================================
 const FormView = ({ user, usersList, record, records, onSave, onCancel }: any) => {
     const isEdit = !!record;
-    const syarikatList = usersList.filter((u: any) => u.role === 'syarikat');
+    const isApplicant = user.role === 'syarikat' || user.role === 'awam';
+    
+    // Admin dan Pegawai boleh daftarkan borang bagi pihak Syarikat ATAU Awam
+    const applicantList = usersList.filter((u: any) => u.role === 'syarikat' || u.role === 'awam');
 
     const [formData, setFormData] = useState(record || {
         status: 'Menunggu Pelepasan', transitLogs: [], id: '', noPendaftaranRasmi: '',
-        routeId: '', routeParams: [], companyId: user.role === 'syarikat' ? user.id : '', companyName: user.role === 'syarikat' ? user.name : '',
+        routeId: '', routeParams: [], companyId: isApplicant ? user.id : '', companyName: isApplicant ? user.name : '',
         stesenPenghantar: '', stesenPenerima: '', konsainor: '', konsainee: '', destinasiAsal: '', destinasiAkhir: '',
         noDaftarKenderaan: '', jenisKenderaan: '', noKontena: '-', namaPemandu: '',
         dokumenDisertakan: { invoice: false, packingList: false, deliveryOrder: false },
@@ -1068,11 +1172,11 @@ const FormView = ({ user, usersList, record, records, onSave, onCancel }: any) =
                 setFormData((prev: any) => ({ ...prev, routeId: '', routeParams: [], stesenPenghantar: '', stesenPenerima: '' }));
             }
         } else if (name === 'companyIdSelector') {
-            const selectedSyarikat = syarikatList.find((s: any) => s.id === value);
+            const selectedApplicant = applicantList.find((s: any) => s.id === value);
             setFormData((prev: any) => ({
                 ...prev,
-                companyId: selectedSyarikat ? selectedSyarikat.id : '',
-                companyName: selectedSyarikat ? selectedSyarikat.name : ''
+                companyId: selectedApplicant ? selectedApplicant.id : '',
+                companyName: selectedApplicant ? selectedApplicant.name : ''
             }));
         } else if (name.startsWith('doc_')) {
             const docType = name.replace('doc_', '');
@@ -1097,7 +1201,7 @@ const FormView = ({ user, usersList, record, records, onSave, onCancel }: any) =
     const handleSubmit = (e: any) => {
         e.preventDefault();
         if(!formData.routeId) return alert("Sila pilih laluan perjalanan.");
-        if((user.role === 'pegawai' || user.role === 'admin') && !formData.companyId) return alert("Sila pilih Syarikat Pemohon.");
+        if(!isApplicant && !formData.companyId) return alert("Sila pilih pemohon / syarikat yang berkenaan.");
 
         let totalQty = formData.items.reduce((sum: number, item: any) => sum + (parseFloat(item.kuantiti) || 0), 0);
         const now = new Date();
@@ -1158,13 +1262,13 @@ const FormView = ({ user, usersList, record, records, onSave, onCancel }: any) =
 
                 <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
                     
-                    {(user.role === 'pegawai' || user.role === 'admin') && !isEdit && (
+                    {!isApplicant && !isEdit && (
                         <div className="p-4 bg-amber-50 border-b border-amber-200">
-                            <label className="block text-sm font-bold text-amber-800 mb-1">MENGISI BAGI PIHAK SYARIKAT (PILIH SYARIKAT):</label>
+                            <label className="block text-sm font-bold text-amber-800 mb-1">MENGISI BAGI PIHAK (PILIH SYARIKAT / ORANG AWAM):</label>
                             <select name="companyIdSelector" required value={formData.companyId} onChange={handleChange} className="w-full p-2 border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 outline-none bg-white">
-                                <option value="">-- Sila Pilih Syarikat --</option>
-                                {syarikatList.sort((a:any,b:any) => a.name.localeCompare(b.name)).map((s: any) => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                <option value="">-- Sila Pilih Pemohon --</option>
+                                {applicantList.sort((a:any,b:any) => a.name.localeCompare(b.name)).map((s: any) => (
+                                    <option key={s.id} value={s.id}>{s.name} ({s.role === 'awam' ? 'Awam' : 'Syarikat'})</option>
                                 ))}
                             </select>
                         </div>
@@ -1189,8 +1293,8 @@ const FormView = ({ user, usersList, record, records, onSave, onCancel }: any) =
                     <div className="p-6 border-b border-slate-100">
                         <h3 className="font-semibold text-slate-700 mb-4 flex items-center"><span className="bg-blue-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs mr-2">2</span>Maklumat Entiti & Pengangkutan</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div><label className="block text-sm mb-1">3. Konsainor</label><textarea name="konsainor" required rows={2} value={formData.konsainor} onChange={handleChange} className="w-full p-2 border rounded border-slate-300"></textarea></div>
-                            <div><label className="block text-sm mb-1">4. Konsainee</label><textarea name="konsainee" required rows={2} value={formData.konsainee} onChange={handleChange} className="w-full p-2 border rounded border-slate-300"></textarea></div>
+                            <div><label className="block text-sm mb-1">3. Konsainor (Pengirim)</label><textarea name="konsainor" required rows={2} value={formData.konsainor} onChange={handleChange} className="w-full p-2 border rounded border-slate-300"></textarea></div>
+                            <div><label className="block text-sm mb-1">4. Konsainee (Penerima)</label><textarea name="konsainee" required rows={2} value={formData.konsainee} onChange={handleChange} className="w-full p-2 border rounded border-slate-300"></textarea></div>
                             <div><label className="block text-sm mb-1">8. Destinasi Asal</label><input type="text" name="destinasiAsal" value={formData.destinasiAsal} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded" /></div>
                             <div><label className="block text-sm mb-1">9. Destinasi Akhir</label><input type="text" name="destinasiAkhir" value={formData.destinasiAkhir} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded" /></div>
                         </div>
@@ -1893,6 +1997,7 @@ const UsersMgmtView = ({ currentUser, usersList, fetchData, logAction }: any) =>
                         <label className="block text-sm font-bold mb-1">Peranan</label>
                         <select value={formData.role} onChange={e=>setFormData({...formData, role: e.target.value})} className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none">
                             <option value="syarikat">Syarikat Logistik</option>
+                            <option value="awam">Orang Awam</option>
                             <option value="pegawai">Pegawai Kastam</option>
                             <option value="admin">Admin</option>
                         </select>
@@ -1932,6 +2037,7 @@ const UsersMgmtView = ({ currentUser, usersList, fetchData, logAction }: any) =>
                         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium">
                             <option value="Semua">Semua Peranan</option>
                             <option value="syarikat">Syarikat Logistik</option>
+                            <option value="awam">Orang Awam</option>
                             <option value="pegawai">Pegawai Kastam</option>
                             <option value="admin">Admin</option>
                         </select>
@@ -1954,7 +2060,7 @@ const UsersMgmtView = ({ currentUser, usersList, fetchData, logAction }: any) =>
                             <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
                                 <td className="p-4 font-medium uppercase text-sm">{u.name}</td>
                                 <td className="p-4">
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : u.role === 'pegawai' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                                    <span className={`px-2 py-1 rounded text-xs font-bold ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : u.role === 'pegawai' ? 'bg-blue-100 text-blue-800' : u.role === 'awam' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'}`}>
                                         {u.role.toUpperCase()}
                                     </span>
                                 </td>
