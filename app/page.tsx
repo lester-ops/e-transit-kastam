@@ -36,6 +36,7 @@ const IconKey = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height=
 const IconRefresh = () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.5l1.25 1.93"/></svg>;
 const IconMail = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
 const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>;
+const IconCamera = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>;
 
 // --- KOMPONEN LOGO (Kalis Pecah & Tempatan) ---
 const LogoKastam = ({ className }: { className?: string }) => (
@@ -129,6 +130,17 @@ export default function App() {
     const [currentRecord, setCurrentRecord] = useState<any>(null);
     const [sysLogs, setSysLogs] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    // --- Muatkan script HTML5-QRCode untuk fungsi kamera di mobile ---
+    useEffect(() => {
+        if (!document.getElementById('html5-qrcode-script')) {
+            const script = document.createElement('script');
+            script.id = 'html5-qrcode-script';
+            script.src = "https://unpkg.com/html5-qrcode";
+            script.async = true;
+            document.body.appendChild(script);
+        }
+    }, []);
 
     const fetchData = async () => {
         try {
@@ -773,6 +785,7 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
     const [scanError, setScanError] = useState('');
     const [filterTerm, setFilterTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('Semua');
+    const [isScanningQR, setIsScanningQR] = useState(false);
 
     const getStatusBadge = (status: string) => {
         if (status === 'Selesai') return <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">Selesai</span>;
@@ -781,22 +794,59 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
         return <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-semibold">Menunggu Pelepasan</span>;
     };
 
-    const handleScanSearch = (e: any) => {
-        e.preventDefault();
+    const processSearch = (term: string) => {
         setScanError('');
-        if (!scanTerm.trim()) return;
+        if (!term.trim()) return;
         const foundRecord = records.find((r: any) => 
-            (r.noPendaftaranRasmi||'').replace(/\s/g,'').toUpperCase() === scanTerm.toUpperCase().replace(/\s/g,'') ||
-            (r.id||'').toUpperCase() === scanTerm.toUpperCase().trim()
+            (r.noPendaftaranRasmi||'').replace(/\s/g,'').toUpperCase() === term.toUpperCase().replace(/\s/g,'') ||
+            (r.id||'').toUpperCase() === term.toUpperCase().trim()
         );
         if (foundRecord) {
             setScanTerm(''); 
             onTrack(foundRecord); 
         } else {
-            setScanError(`Rekod tidak dijumpai.`);
-            setTimeout(() => setScanError(''), 3000);
+            setScanError(`Rekod tidak dijumpai untuk pencarian: ${term}`);
+            setTimeout(() => setScanError(''), 4000);
         }
     };
+
+    const handleScanSearch = (e: any) => {
+        e.preventDefault();
+        processSearch(scanTerm);
+    };
+
+    // Urus Pengimbas Kamera QR (HTML5-QRCode)
+    useEffect(() => {
+        let html5QrcodeScanner: any = null;
+        if (isScanningQR) {
+            const initScanner = () => {
+                if ((window as any).Html5QrcodeScanner) {
+                    html5QrcodeScanner = new (window as any).Html5QrcodeScanner(
+                        "qr-reader",
+                        { fps: 10, qrbox: { width: 250, height: 250 } },
+                        false
+                    );
+                    html5QrcodeScanner.render((decodedText: string) => {
+                        if (html5QrcodeScanner) {
+                            html5QrcodeScanner.clear().catch(console.error);
+                        }
+                        setIsScanningQR(false);
+                        processSearch(decodedText);
+                    }, undefined);
+                } else {
+                    // Jika script belum habis dimuat, cuba lagi selepas 500ms
+                    setTimeout(initScanner, 500);
+                }
+            };
+            initScanner();
+        }
+
+        return () => {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear().catch(console.error);
+            }
+        };
+    }, [isScanningQR]);
 
     // SYARIKAT HANYA MELIHAT REKODNYA SENDIRI
     let filteredRecords = user.role === 'syarikat' ? records.filter((r: any) => r.companyId === user.id) : records;
@@ -831,6 +881,19 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                 title="Borang yang dibatalkan tidak boleh dikembalikan. Sila nyatakan sebab untuk rekod rujukan." 
             />
 
+            {/* Modal Scanner QR Kamera */}
+            {isScanningQR && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center">
+                        <h3 className="text-lg font-bold mb-4 text-slate-800">Imbas Kod QR Borang</h3>
+                        <div id="qr-reader" className="w-full mx-auto mb-4 overflow-hidden rounded-lg"></div>
+                        <button onClick={() => setIsScanningQR(false)} className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold shadow transition-colors">
+                            Batal Imbasan
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
                 {(user.role === 'pegawai' || user.role === 'admin') && (
                     <div className="bg-blue-50 p-6 rounded-xl shadow-sm border border-blue-200">
@@ -838,17 +901,20 @@ const Dashboard = ({ user, records, onDelete, onHardDelete, onOpenForm, onPrint,
                             <div className="bg-blue-600 text-white p-1.5 rounded mr-2"><IconScan /></div>
                             Tindakan Operasi (Imbas QR / Carian)
                         </label>
-                        <p className="text-xs text-blue-700 mb-4 font-medium">Imbas QR atau taip No. Pendaftaran untuk terus membuka paparan log pengesahan laluan.</p>
+                        <p className="text-xs text-blue-700 mb-4 font-medium">Buka Kamera telefon anda atau taip No. Pendaftaran untuk mengesahkan laluan lori.</p>
                         <form onSubmit={handleScanSearch} className="flex gap-2">
                             <input
                                 type="text"
                                 value={scanTerm}
                                 onChange={(e) => setScanTerm(e.target.value)}
-                                placeholder="Cth: Y4S-05-00001/26"
-                                className="flex-grow p-3 border-2 border-blue-300 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none uppercase font-mono text-sm shadow-inner bg-white"
+                                placeholder="Cth: Y4S-..."
+                                className="flex-grow p-3 border-2 border-blue-300 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none uppercase font-mono text-sm shadow-inner bg-white min-w-0"
                             />
+                            <button type="button" onClick={() => setIsScanningQR(true)} className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-3 rounded-xl shadow-md transition-colors flex items-center justify-center" title="Buka Kamera Telefon">
+                                <IconCamera />
+                            </button>
                             <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-colors flex items-center justify-center whitespace-nowrap">
-                                Cari & Sahkan
+                                Cari
                             </button>
                         </form>
                         {scanError && (
